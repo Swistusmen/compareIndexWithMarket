@@ -1,0 +1,132 @@
+library(janitor)
+library(vars)
+library(zoo)
+library(aTSA)
+library(tseries)
+
+#wczytanie danych -c
+Holandia<- read.csv("aex_Holandia.csv", sep=',')
+Belgia <- read.csv("bel20_Belgia.csv", sep=',')
+Wlochy<- read.csv("hex_Wlochy.csv", sep=',')
+Hiszpania <- read.csv("ibex_Hiszpania.csv", sep=',')
+Portugalia <- read.csv("psi20_Portugalia.csv", sep=',')
+
+#poloczenie danych 
+#install.packages("dplyr")
+library(dplyr)
+join_HB <- full_join(Holandia[c(1,5)], Belgia[c(1,5)], by="Data")
+join_WH <- full_join(Wlochy[c(1,5)], Hiszpania[c(1,5)], by="Data")
+join_HBWH <- full_join(join_HB , join_WH , by="Data")
+dane <- full_join(join_HBWH , Portugalia[c(1,5)], by="Data")
+
+#sposob 1 wyeksportowanie pliku, obrobka wszystkiego w excelu
+write.csv(dane, "/Users/konradbobola/Desktop/R - studia moje/export.csv")
+
+#sposob 2 - w r 
+#zmiana nazwy kolumn 
+kolumny <- c("data","Holandia","Belgia","Wlochy","Hiszpania","Portugalia")
+names(dane) <- kolumny
+
+#dlugosc data.farme dane 
+length = nrow(dane) - 1
+
+#interpolacja - usuniecie NA
+dane[2:6] <- as.data.frame(na.approx(dane[,2:6]))
+
+#stopy zwroty 
+logStopazwrotu <- as.data.frame(matrix(0,length,5))
+for(i in 1:length){
+  logStopazwrotu[i,1] <- log(dane[i+1,2]/dane[i,2])
+  logStopazwrotu[i,2] <- log(dane[i+1,3]/dane[i,3])
+  logStopazwrotu[i,3] <- log(dane[i+1,4]/dane[i,4])
+  logStopazwrotu[i,4] <- log(dane[i+1,5]/dane[i,5])
+  logStopazwrotu[i,5] <- log(dane[i+1,6]/dane[i,6])
+}
+
+#zmiana nazwy kolumn 
+kolumny2 <- c("Holandia","Belgia","Wlochy","Hiszpania","Portugalia")
+colnames(logStopazwrotu) <- kolumny2
+
+#Badanie stacjonarnosci
+#install.packages("ggplot2")
+library(ggplot2)
+
+Holandia <- logStopazwrotu[,1]
+Belgia <- logStopazwrotu[,2]
+Wlochy <- logStopazwrotu[,3]
+Hiszpania <- logStopazwrotu[,4]
+Portugalia <- logStopazwrotu[,5]
+
+#wykresy
+# ggplot(data=logStopazwrotu, mapping = aes(y=Holandia, x=logStopazwrotu[,6], group = 1 )) +
+#   geom_line(color="#6888e2") +
+#   labs(x = 'czas', y="stopa zwrotu", title='Holandia')
+# 
+# ggplot(data=logStopazwrotu, mapping = aes(y=Belgia, x=logStopazwrotu[,6], group = 1 )) +
+#   geom_line(color="#a252e9") +
+#   labs(x = 'czas', y="stopa zwrotu", title='Belgia')
+# 
+# ggplot(data=logStopazwrotu, mapping = aes(y=Wlochy, x=logStopazwrotu[,6], group = 1 )) +
+#   geom_line(color="#5eb45c") +
+#   labs(x = 'czas', y="stopa zwrotu", title='Wlochy')
+# 
+# ggplot(data=logStopazwrotu, mapping = aes(y=Hiszpania, x=logStopazwrotu[,6], group = 1 )) +
+#   geom_line(color="#d151ac") +
+#   labs(x = 'czas', y="stopa zwrotu", title='Hiszpania')
+# 
+# ggplot(data=logStopazwrotu, mapping = aes(y=Portugalia, x=logStopazwrotu[,6], group = 1 )) +
+#   geom_line(color="#d15c51") +
+#   labs(x = 'czas', y="stopa zwrotu", title='Portugalia')
+
+
+#Autokorelacja - wykresy 
+adf.test(Holandia)
+adf.test(Belgia)
+adf.test(Wlochy)
+adf.test(Hiszpania)
+adf.test(Portugalia)
+
+#Wybór rzędu opóźnień dla modelu var 
+VARselect(logStopazwrotu[1:5], lag.max = 7)
+
+#model VAR
+model <- VAR(logStopazwrotu[1:5], p=1, type ="none")
+summary(model)
+
+
+#autokorelacja dla reszt modelu, przy dlugich szergach czasowych nawet mikro korelacja zostanie wychwycona - lepiej 
+reszty_dla_Holandii <- model$varresult$Holandia$residuals
+reszty_dla_Belgii <- model$varresult$Belgia$residuals
+reszty_dla_Wloch <- model$varresult$Wlochy$residuals
+reszty_dla_Hiszpanii <- model$varresult$Hiszpania$residuals
+reszty_dla_Portugali <- model$varresult$Portugalia$residuals
+  
+acf(reszty_dla_Holandii)
+acf(reszty_dla_Belgii)
+acf(reszty_dla_Wloch)
+acf(reszty_dla_Hiszpanii)
+acf(reszty_dla_Portugali)
+
+#Granger test 
+grangerHolandia <- causality(model, cause = "Holandia")
+grangerHolandia$Granger
+grangerBelgia <- causality(model, cause = "Belgia")
+grangerBelgia$Granger
+grangerWlochy <- causality(model, cause = "Wlochy")
+grangerWlochy$Granger
+grangerHiszpania<- causality(model, cause = "Hiszpania")
+grangerHiszpania$Granger
+grangerPortugalia <- causality(model, cause = "Portugalia")
+grangerPortugalia$Granger
+
+grangertest(Hiszpania, Holandia)
+grangertest(Hiszpania, Belgia)
+grangertest(Hiszpania, Wlochy)
+grangertest(Hiszpania, Portugalia)
+
+
+#IRF function 
+#plot(irf(model, n.ahead = 10))
+Belgia_irs<- irf(model, impuls="Holandia", response = "Belgia", n.ahead = 10, boot = TRUE)
+plot(Belgia_irs, ylab='Belgia', main="Shock from Holandia")
+
